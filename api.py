@@ -100,7 +100,7 @@ def audio2text(file_path, user_id):
 @app.post(path='/asr', summary="bytes", response_model=ResponseModel, tags=["语音识别"])
 async def interface(
         file: UploadFile,
-        user_id: int = Form()
+        user_id: int = Form(default=1, description="用户ID", example=1)
 ):
     logger.info(file.content_type)
 
@@ -169,7 +169,7 @@ async def interface(req: RequestModel):
 @app.post(path='/asr_punc', summary="bytes", response_model=ResponseModel, tags=["语音识别+标点恢复"])
 async def interface(
         file: UploadFile,
-        user_id: int = Form()
+        user_id: int = Form(default=1, description="用户ID", example=1)
 ):
     logger.info(file.content_type)
 
@@ -197,7 +197,7 @@ async def interface(
 async def large_model_polish(req: RequestModel):
     conv_uid = uuid.uuid1()
     conv_uid = "599fd1de-6c95-11ee-b598-0242ac11000a"
-    print(uuid.uuid1())
+    # print(uuid.uuid1())
 
     url = f"http://{large_model_ip}:{large_model_port}/api/v1/chat/completions"
     prompt = f"你是一位专业的会议记录员,请从专业角度润色并总结这下面这句话 ”{req.text}“,要简介专业。返回格式：会议内容：xxx。"
@@ -223,7 +223,7 @@ async def uploadVideo_And_toAudio(
         to_word: bool = Form(default=True, description="是否转为文字", example="True"),
         start_time: int = Form(default=0, description="截取开始时间", example=0),
         end_time: int = Form(default=0, description="截取结束时间", example=0),
-        user_id: int = Form()
+        user_id: int = Form(default=1, description="用户ID", example=1)
 ):
     uid = uuid.uuid1()
     logger.info(file.content_type)
@@ -280,7 +280,7 @@ async def slice_video(
         start_time_second: int = Form(default=0, description="截取开始时间", example=0),
         end_time_min: int = Form(default=0, description="截取结束时间", example=0),
         end_time_second: int = Form(default=0, description="截取结束时间", example=0),
-        user_id: int = Form()
+        user_id: int = Form(default=1, description="用户ID", example=1)
 ):
     try:
         slice_file_path = cache_dir + f"/{user_id}"
@@ -316,37 +316,37 @@ async def slice_video(
     return FileResponse(save_path, media_type="video/mp4")
 
 
-@app.post(path='/text2audio', tags=["文字转语音"])
-async def text2audio(
-        text: str = Form("", example="今天的天气真不错啊,你下午有空吗?我想约你一起去吃饭."),
-        rate: int = Form(120),
-        volume: int = Form(1),
-        user_id: int = Form()
-):
-    engine = pyttsx3.init()
-    voices = engine.getProperty('voices')
-    for voice in voices:
-        print("Voice:")
-        print(" - ID: %s" % voice.id)
-        print(" - Name: %s" % voice.name)
-        print(" - Languages: %s" % voice.languages)
-        print(" - Gender: %s" % voice.gender)
-        print(" - Age: %s" % voice.age)
-
-    # 设置语速与音量
-    # engine.setProperty('voice', e_v_id)
-    engine.setProperty('rate', rate)  # 语速
-    engine.setProperty('volume', volume)  # 音量
-
-    # 保存语音
-    save_path = f"./cache/{user_id}"
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
-    save_path += "/text2audio.mp3"
-    engine.save_to_file(text, save_path)
-    engine.runAndWait()
-    engine.stop()
-    return FileResponse(save_path, media_type="audio/mp3")
+# @app.post(path='/text2audio', tags=["文字转语音"])
+# async def text2audio(
+#         text: str = Form("", example="今天的天气真不错啊,你下午有空吗?我想约你一起去吃饭."),
+#         rate: int = Form(120),
+#         volume: int = Form(1),
+#         user_id: int = Form(default=1, description="用户ID", example=1)
+# ):
+#     engine = pyttsx3.init()
+#     voices = engine.getProperty('voices')
+#     for voice in voices:
+#         print("Voice:")
+#         print(" - ID: %s" % voice.id)
+#         print(" - Name: %s" % voice.name)
+#         print(" - Languages: %s" % voice.languages)
+#         print(" - Gender: %s" % voice.gender)
+#         print(" - Age: %s" % voice.age)
+#
+#     # 设置语速与音量
+#     # engine.setProperty('voice', e_v_id)
+#     engine.setProperty('rate', rate)  # 语速
+#     engine.setProperty('volume', volume)  # 音量
+#
+#     # 保存语音
+#     save_path = f"./cache/{user_id}"
+#     if not os.path.exists(save_path):
+#         os.makedirs(save_path)
+#     save_path += "/text2audio.mp3"
+#     engine.save_to_file(text, save_path)
+#     engine.runAndWait()
+#     engine.stop()
+#     return FileResponse(save_path, media_type="audio/mp3")
 
 
 @app.post(path='/shortVideoScriptGeneration', tags=["短视频脚本文件生成"])
@@ -391,7 +391,7 @@ async def industryReportSummary(
         file: UploadFile = File(description="pdf、word、txt文件"),
         industry: str = Form(),
         num_word: int = Form(default=1000),
-        user_id: int = Form()
+        user_id: int = Form(default=1, description="用户ID", example=1)
 ):
     uid = uuid.uuid1()
     logger.info(file.content_type)
@@ -483,7 +483,7 @@ async def scrapy_by_url(
 @app.post(path='/scrapy_by_url', tags=["行业报告生成"])
 async def scrapy_by_url(
         url: str = Form(),
-        user_id: int = Form()
+        user_id: int = Form(default=1, description="用户ID", example=1)
 ):
     id = url.split("id=")[1].split("&")[0]
     t1 = time.time()
