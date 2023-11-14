@@ -79,3 +79,9 @@ def type_check_file(file_type: str):
         raise VideoTypeError("当前仅支持pdf、txt、docx、rtf")
 
     return suffix
+
+
+def check_path(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
+    return path

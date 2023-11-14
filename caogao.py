@@ -54,7 +54,9 @@ from scrapy.http import HtmlResponse
 import urllib.parse
 import requests
 import time
+
 app = FastAPI(title="语音识别", version="v1.0", )
+
 
 # 爬虫 www.iresearch.com.cn通过关键字范围搜索
 @app.post(path='/scrapy_by_keyword')
@@ -107,7 +109,91 @@ def pdf2word(path):
             print(text)
     return text
 
+
+import requests
+import tqdm
+
+
+def upload_file(file_path, url):
+    file = open(file_path, "rb")
+    total_size = len(file.read())
+    file.seek(0)
+
+    headers = {
+        'Content-Length': str(total_size),
+        'Content-Type': 'video/mp4',
+        # 'Authorization':
+    }
+
+    progress_bar = tqdm.tqdm(total=total_size, unit='B', unit_scale=True)
+
+    for chunk in file:
+        response = requests.post(url, data=chunk, headers=headers)
+        progress_bar.update(len(chunk))
+
+    progress_bar.close()
+    file.close()
+
+
+
+import uvicorn
+from fastapi import Form, FastAPI
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from scrapy.http import HtmlResponse
+import urllib.parse
+import requests
+import time
+app = FastAPI(title="语音识别", version="v1.0", )
+
+# 爬虫 www.iresearch.com.cn通过关键字范围搜索
+@app.post(path='/scrapy_by_keyword')
+async def scrapy_by_url(
+        keyword: str = Form()
+):
+    options = Options()
+    options.add_argument('--no-sandbox')  # 亲测 Debian 必须加，Ubuntu 随意
+    options.add_argument("--headless")
+    options.add_argument('--disable-gpu')
+
+    dicts = {}
+    url_pre = f"https://www.iresearch.com.cn/search?type=1&keyword="
+    url = url_pre + urllib.parse.quote(keyword)
+    print(url)
+    request = requests.get(url)
+    pre_url = "https://www.iresearch.com.cn"
+    if 'iresearch.com.cn/search' in url:
+        driver = webdriver.Chrome(options=options)
+        driver.get(url)
+        time.sleep(2)
+        data = driver.page_source
+        driver.close()
+
+        # 创建响应对象
+        res = HtmlResponse(url=url, body=data, encoding='utf-8', request=request)
+        print(res)
+
+        # /html/body/div[1]/div[2]/div[2]/div/div/div[2]/div[1]/div[2]/div[1]
+        url_back = res.xpath("/html/body/div[1]/div[2]/div[2]/div/div/div[2]/div[1]/div[2]//a/@href").getall()
+        urls = [pre_url + i for i in url_back]
+
+        # /html/body/div[1]/div[2]/div[2]/div/div/div[2]/div[1]/div[2]/div[2]/div[1]/a/img/@alt
+        names = res.xpath("/html/body/div[1]/div[2]/div[2]/div/div/div[2]/div[1]/div[2]//a/img/@alt").getall()
+
+        ids_url = [0, 2, 4, 6, 8, 10, 12, 14, 16]
+        for i, val in enumerate(zip(ids_url, names)):
+            dicts[urls[val[0]]] = val[1]
+
+    return {"isSuc": True, "code": 0, "msg": "Success ~", "res": {"res": dicts}}
+
+
 if __name__ == '__main__':
     # uvicorn.run(app, host="0.0.0.0", port=18511)
 
-    pdf2word(r"C:\Users\Xavier\Desktop\O域九天AI平台能力上台及能力运维培训-20220510-nj.pdf")
+    # pdf2word(r"C:\Users\Xavier\Desktop\O域九天AI平台能力上台及能力运维培训-20220510-nj.pdf")
+    # upload_file("./test/test.mp4", "http://0.0.0.0:18510")
+    pass
+    import uuid
+    print(uuid.uuid1())
+    # print(uuid.uuid3())
+    print(uuid.uuid4())

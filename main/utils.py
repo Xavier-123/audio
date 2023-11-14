@@ -37,16 +37,13 @@ def clear_slice_file(path):
         os.mkdir(folder_path)
 
 
-def slice_audio(file, user_id):
-    print(type(file))
-    if isinstance(file, pathlib.WindowsPath):
-        audio = AudioSegment.from_file(file)
-    elif isinstance(file, UploadFile):
-        name = file.filename
-        audio = AudioSegment.from_file(cache_dir + f"/{user_id}/" + name, "mp3")
+# def slice_audio(file, user_id):
+def slice_audio(file_path, user_id):
+    print(type(file_path))
+    if isinstance(file_path, pathlib.WindowsPath):
+        audio = AudioSegment.from_file(file_path)
     else:
-        name = file.name
-        audio = AudioSegment.from_file(cache_dir + f"/{user_id}/" + name, "mp3")
+        audio = AudioSegment.from_file(file_path, "mp3")
 
     size = 50000  # 切割的毫秒数 50s=50000
     chunks = make_chunks(audio, size)  # 将文件切割为50s一个
@@ -56,6 +53,7 @@ def slice_audio(file, user_id):
     for i, chunk in enumerate(chunks):
         chunk_name = slice_dir + "/{0}.wav".format(i)
         chunk.export(chunk_name, format="wav")
+    audio.close()
     return slice_dir
 
 def file2word(path):

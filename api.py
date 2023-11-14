@@ -30,7 +30,7 @@ import urllib.parse
 system = sys.platform
 
 from conf.config import use_cache, cache_dir, large_model_ip, large_model_port, large_model_name
-from main.check_tool import type_check, tmp_file, type_check_video, type_check_file
+from main.check_tool import type_check, tmp_file, type_check_video, type_check_file, check_path
 from main.error_define import BinaryDecodingError, CustomError
 from main.log import logger
 from main.utils import get_video_lists, clear_slice_file, get_audio_duration, slice_audio, file2word
@@ -59,7 +59,8 @@ class ResponseModel(BaseModel):
 def audio2text(file_path, user_id):
     # 判断文件时长
     file_time = get_audio_duration(file_path)
-    path = pathlib.Path(file_path)
+    # path = pathlib.Path(file_path)
+    path = file_path
     if float(file_time) >= 50:
         slice_dir = slice_audio(path, user_id)
         text = ""
@@ -89,38 +90,60 @@ def audio2text(file_path, user_id):
         logger.info(res)
     else:
         text = asr.__call__(path, force_yes=True)
-        if not use_cache:
-            path.unlink(missing_ok=True)
         logger.info(text)
         res = text_punc.__call__(text=text)
+
+    if not use_cache:
+        path.unlink(missing_ok=True)
     return JSONResponse(status_code=status.HTTP_200_OK,
                         content={"isSuc": True, "code": 0, "msg": "Success ~", "res": res})
+
+@app.post(path='/upload_file', summary="bytes", response_model=ResponseModel, tags=["上传文件"])
+async def upload_file(
+        file: UploadFile = File(description="一个二进制文件"),
+        user_id: int = Form(default=1)
+):
+    uid = uuid.uuid1()
+    content_type = file.content_type
+    # 文件类型校验
+    suffix = ""
+    if "mp3" in content_type or "wav" in content_type:
+        suffix = type_check(content_type)
+    if "mp4" in content_type or "x-msvideo" in content_type:
+        suffix = type_check_video(content_type)
+    if "pdf" in content_type or "text/plain" in content_type or "document" in content_type:
+        suffix = type_check_file(content_type)
+    # 生成文件名: pathlib.Path对象
+    file_path = pathlib.Path(cache_dir, str(user_id))
+    file_path = check_path(file_path)
+    saved_path = pathlib.Path(file_path, f"{uid}{suffix}")
+
+    # 将文件保存在本地
+    try:
+        file_content = await file.read()  # 读取上传文件的内容
+        if os.path.exists(saved_path) and os.path.getsize(saved_path) == len(file_content):
+            file_status = f"文件 {file.filename} 已存在。"
+            content = {"isSuc": True, "code": 0, "msg": file_status, "res": {}}
+            return JSONResponse(status_code=status.HTTP_200_OK, content=content)
+        with open(saved_path, "wb") as f:
+            f.write(file_content)
+    except Exception as e:
+        raise BinaryDecodingError(e)
+    content = {"isSuc": True, "code": 0, "msg": "Success ~", "res": f"{uid}{suffix}"}
+    return JSONResponse(status_code=status.HTTP_200_OK, content=content)
 
 
 @app.post(path='/asr', summary="bytes", response_model=ResponseModel, tags=["语音识别"])
 async def interface(
-        file: UploadFile,
+        file_name: str = Form(),
         user_id: int = Form(default=1, description="用户ID", example=1)
 ):
-    logger.info(file.content_type)
-
-    # 文件类型校验
-    suffix = type_check(file.content_type)
-    # 生成文件名: pathlib.Path对象
-    file_path = tmp_file(suffix, file.filename, user_id)
-
-    # 将文件保存在本地
-    try:
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-    except Exception as e:
-        raise BinaryDecodingError(e)
+    file_path = pathlib.Path(cache_dir + f"/{user_id}/{file_name}")
 
     # 判断文件时长
     file_time = get_audio_duration(file_path)
     if float(file_time) >= 50:
-        slice_dir = slice_audio(file, user_id)
+        slice_dir = slice_audio(file_path, user_id)
         res = ""
         files = glob.glob(slice_dir + "/*")
         print("files:", files)
@@ -130,16 +153,16 @@ async def interface(
         else:
             files = sorted(files, key=lambda x: int(x.split("/")[-1].split(".")[0]))
 
-        for file in files:
+        for _file in files:
             # 语音识别
-            _res = asr.__call__(file, force_yes=True)
+            _res = asr.__call__(_file, force_yes=True)
             res += _res
     else:
         # 语音识别
         res = asr.__call__(file_path, force_yes=True)
-        if not use_cache:
-            file_path.unlink(missing_ok=True)
 
+    if not use_cache:
+        file_path.unlink(missing_ok=True)
     content = {"isSuc": True, "code": 0, "msg": "Success ~", "res": res}
     logger.info(content)
     return JSONResponse(status_code=status.HTTP_200_OK, content=content)
@@ -168,24 +191,10 @@ async def interface(req: RequestModel):
 
 @app.post(path='/asr_punc', summary="bytes", response_model=ResponseModel, tags=["语音识别+标点恢复"])
 async def interface(
-        file: UploadFile,
+        file_name: str = Form(),
         user_id: int = Form(default=1, description="用户ID", example=1)
 ):
-    logger.info(file.content_type)
-
-    # 文件类型校验
-    suffix = type_check(file.content_type)
-    # 生成文件名: pathlib.Path对象
-    file_path = tmp_file(suffix, file.filename, user_id)
-
-    # 将文件保存在本地
-    try:
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-    except Exception as e:
-        raise BinaryDecodingError(e)
-
+    file_path = pathlib.Path(cache_dir + f"/{user_id}/{file_name}")
     try:
         return audio2text(file_path, user_id)
     except Exception as e:
@@ -219,33 +228,19 @@ async def large_model_polish(req: RequestModel):
 
 @app.post(path='/uploadVideo_And_toAudio', response_model=ResponseModel, tags=["上传视频, 视频转音频，音频转文字"])
 async def uploadVideo_And_toAudio(
-        file: UploadFile = File(description="MP4和AVI格式的视频文件"),
+        file_name: str = Form(description="MP4和AVI格式的视频文件"),
         to_word: bool = Form(default=True, description="是否转为文字", example="True"),
         start_time: int = Form(default=0, description="截取开始时间", example=0),
         end_time: int = Form(default=0, description="截取结束时间", example=0),
         user_id: int = Form(default=1, description="用户ID", example=1)
 ):
     uid = uuid.uuid1()
-    logger.info(file.content_type)
-
-    # 文件类型校验
-    suffix = type_check_video(file.content_type)
-    # 生成文件名: pathlib.Path对象
-    file_path = tmp_file(suffix, file.filename, user_id)
-    name = str(file.filename).split(".")[0] + f"_{start_time}_{end_time}.mp3"
-
-    # 将文件保存在本地
-    try:
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-        # res = f"{name} is exits."
-    except Exception as e:
-        raise BinaryDecodingError(e)
+    file_path = pathlib.Path(cache_dir + f"/{user_id}/{file_name}")
+    name = file_name.split(".")[-2] + f"_{start_time}_{end_time}.mp3"
 
     # 视频转音频
     try:
-        video_path = pathlib.Path(cache_dir + f'/{user_id}/', file.filename)
+        video_path = file_path
         video = AudioSegment.from_file(video_path)
 
         # 视频流截取
@@ -258,8 +253,9 @@ async def uploadVideo_And_toAudio(
         else:
             raise "start time or end time is error."
 
-        save_path = pathlib.Path(cache_dir + f'/{user_id}/', name)
+        save_path = pathlib.Path(cache_dir + f"/{user_id}/{name}")
         video.export(out_f=save_path, format="mp3")
+        # video.close()
     except Exception as e:
         raise {"isSuc": True, "code": -1, "msg": "fail ~", "res": {"res": "video to audio is fail"}}
 
@@ -275,7 +271,7 @@ async def uploadVideo_And_toAudio(
 
 @app.post(path='/slice_video', tags=["截取视频"])
 async def slice_video(
-        file: UploadFile = File(description="MP4和AVI格式的视频文件"),
+        file_name: str = Form(description="MP4和AVI格式的视频文件"),
         start_time_min: int = Form(default=0, description="截取开始时间", example=0),
         start_time_second: int = Form(default=0, description="截取开始时间", example=0),
         end_time_min: int = Form(default=0, description="截取结束时间", example=0),
@@ -283,20 +279,8 @@ async def slice_video(
         user_id: int = Form(default=1, description="用户ID", example=1)
 ):
     try:
-        slice_file_path = cache_dir + f"/{user_id}"
-        if not os.path.exists(slice_file_path):
-            os.makedirs(slice_file_path)
-        slice_file_path = slice_file_path + "/download/"
-        clear_slice_file(slice_file_path)
-        name = file.filename.split(".")[0]
-        # 将文件保存在本地
-        try:
-            path = slice_file_path + file.filename
-            content = await file.read()
-            with open(path, "wb") as f:
-                f.write(content)
-        except Exception as e:
-            raise BinaryDecodingError(e)
+        name = file_name
+        path = pathlib.Path(cache_dir + f"/{user_id}/{file_name}")
 
         start_time = (0, start_time_min, start_time_second)
         end_time = (0, end_time_min, end_time_second)
@@ -307,7 +291,7 @@ async def slice_video(
             video = source_video  # 执行剪切操作
         else:
             video = source_video.subclip(int(start_time_s), int(stop_time_s))  # 执行剪切操作
-        save_path = slice_file_path + f"{name}_{start_time_min}_{start_time_second}_{end_time_min}_{end_time_second}.mp4"
+        save_path = cache_dir + f"/{user_id}/" + f"{name}_{start_time_min}_{start_time_second}_{end_time_min}_{end_time_second}.mp4"
         video.write_videofile(save_path)  # 输出文件
         video.close()
 
@@ -388,27 +372,12 @@ async def shortVideoScriptGeneration(theme: str = Form()):
 
 @app.post(path='/industryReportSummary', tags=["行业报告摘要"])
 async def industryReportSummary(
-        file: UploadFile = File(description="pdf、word、txt文件"),
+        file_name: str = Form(description="pdf、word、txt文件"),
         industry: str = Form(),
         num_word: int = Form(default=1000),
         user_id: int = Form(default=1, description="用户ID", example=1)
 ):
-    uid = uuid.uuid1()
-    logger.info(file.content_type)
-
-    # 文件类型校验
-    suffix = type_check_file(file.content_type)
-    # 生成文件名: pathlib.Path对象
-    name = str(file.filename).split(suffix)[0] + str(uid) + f"{suffix}"
-    file_path = tmp_file(suffix, name, user_id)
-
-    # 将文件保存在本地
-    try:
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-    except Exception as e:
-        raise BinaryDecodingError(e)
+    file_path = pathlib.Path(cache_dir + f"/{user_id}/{file_name}")
 
     # 文件转文字
     theme = file2word(file_path)
@@ -439,7 +408,8 @@ async def industryReportSummary(
     logger.info(res)
 
     '''后续新增删除会话功能'''
-    pass
+    if not use_cache:
+        file_path.unlink(missing_ok=True)
 
     return {"isSuc": True, "code": 0, "msg": "Success ~", "res": {"res": res}}
 
@@ -522,10 +492,37 @@ async def scrapy_by_url(
 
 
 @app.post(path='/weekly_report_writing', tags=["周报生成"])
-async def scrapy_by_url(
+async def weekly_report_writing(
         text: str = Form()
 ):
     prompt = f'''你是一位职场周报总结小助理。请根据"{text}"这段文本，结合本周工作概要，进行分点概括和扩写，写出周报，风格为简洁专业。'''
+    # Let's think step by step。
+
+    conv_uid = uuid.uuid1()
+    conv_uid = "3f085f84-72fe-11ee-9048-0242ac11000a"
+    url = f"http://{large_model_ip}:{large_model_port}/api/v1/chat/completions"
+    data = {
+        "chat_mode": "chat_normal",
+        "conv_uid": conv_uid,
+        "model_name": large_model_name,
+        "user_input": prompt
+    }
+    logger.info(prompt)
+    inquire_post_response = requests.post(url, json=data)
+    res = inquire_post_response.content.decode('utf-8').split("\ndata:")[-1]
+    logger.info(res)
+
+    '''后续新增删除会话功能'''
+    pass
+
+    return {"isSuc": True, "code": 0, "msg": "Success ~", "res": {"res": res}}
+
+
+@app.post(path='/industry_data', tags=["行业数据采集"])
+async def industry_data(
+        text: str = Form()
+):
+    prompt = f'''你是一名资深的咨询公司顾问，帮我针对[{text}]进行分析。需要从市场规模、市场份额、产销量和企业竞争力四个维度进行分析，要求尽可能详细，并结合数据或文献作为分析依据'''
     # Let's think step by step。
 
     conv_uid = uuid.uuid1()
